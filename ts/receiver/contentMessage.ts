@@ -292,27 +292,34 @@ async function decrypt(envelope: EnvelopePlus): Promise<any> {
   return plaintext;
 }
 
-async function shouldDropIncomingPrivateMessage(sentAtTimestamp: number, envelope: EnvelopePlus) {
+async function shouldDropIncomingPrivateMessage(
+  sentAtTimestamp: number,
+  envelope: EnvelopePlus,
+  content: SignalService.Content
+) {
   // sentAtMoreRecentThanWrapper is going to be true, if the latest contact wrapper we processed was roughly more recent that this message timestamp
   const moreRecentOrNah = await sentAtMoreRecentThanWrapper(sentAtTimestamp, 'ContactsConfig');
 
   if (moreRecentOrNah === 'wrapper_more_recent') {
     // we need to check if that conversation is already in the wrapper, and if yes
     try {
-      const privateConvoInWrapper = await ContactsWrapperActions.get(envelope.source);
+      const syncTargetOrSource = content.dataMessage?.syncTarget || envelope.source;
+      const privateConvoInWrapper = await ContactsWrapperActions.get(
+        content.dataMessage?.syncTarget || envelope.source
+      );
       if (
         !privateConvoInWrapper ||
         privateConvoInWrapper.priority <= CONVERSATION_PRIORITIES.hidden
       ) {
         // the wrapper is more recent that this message and there is no such private conversation. Just drop this incoming message.
         window.log.info(
-          `received message from contact ${envelope.source} which appears to be hidden/removed in our most recent libsession contactconfig, sentAt: ${sentAtTimestamp}. Dropping it`
+          `received message from contact ${syncTargetOrSource} which appears to be hidden/removed in our most recent libsession contactconfig, sentAt: ${sentAtTimestamp}. Dropping it`
         );
         return true;
       }
 
       window.log.info(
-        `received message from contact ${envelope.source} which appears to NOT be hidden/removed in our most recent libsession contactconfig, sentAt: ${sentAtTimestamp}. `
+        `received message from contact ${syncTargetOrSource} which appears to NOT be hidden/removed in our most recent libsession contactconfig, sentAt: ${sentAtTimestamp}. `
       );
     } catch (e) {
       window.log.warn(
@@ -409,7 +416,7 @@ export async function innerHandleSwarmContentMessage(
     const isPrivateConversationMessage = !envelope.senderIdentity;
 
     if (isPrivateConversationMessage) {
-      if (await shouldDropIncomingPrivateMessage(sentAtTimestamp, envelope)) {
+      if (await shouldDropIncomingPrivateMessage(sentAtTimestamp, envelope, content)) {
         await removeFromCache(envelope);
         return;
       }
